@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Report, ReportStatus } from '../entities/report.entity';
 import { CreateReportDto } from '../dto/create-report.dto';
 import { CreateReportResponseDto } from '../dto/report-response.dto';
+import { GetReportsResponseDto } from '../dto/get-reports.dto';
 import { ValidationService } from './validation.service';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -130,5 +131,95 @@ export class ReportService {
       throw new BadRequestException('Reporte no encontrado');
     }
     return report;
+  }
+
+  async getAllReports(filters: {
+    page: number;
+    limit: number;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<GetReportsResponseDto> {
+    try {
+      const { page, limit, status, startDate, endDate } = filters;
+      const skip = (page - 1) * limit;
+
+      // Construir query con filtros
+      const queryBuilder = this.reportRepository.createQueryBuilder('report');
+
+      // Filtro por estado
+      if (status) {
+        queryBuilder.andWhere('report.status = :status', { status });
+      }
+
+      // Filtro por rango de fechas
+      if (startDate) {
+        const parsedStartDate = this.validationService.parseDateTime(startDate, '00:00');
+        if (parsedStartDate) {
+          queryBuilder.andWhere('report.incidentDate >= :startDate', { startDate: parsedStartDate });
+        }
+      }
+
+      if (endDate) {
+        const parsedEndDate = this.validationService.parseDateTime(endDate, '23:59');
+        if (parsedEndDate) {
+          queryBuilder.andWhere('report.incidentDate <= :endDate', { endDate: parsedEndDate });
+        }  
+      }
+
+      // Ordenar por fecha de creación (más recientes primero)
+      queryBuilder.orderBy('report.createdAt', 'DESC');
+
+      // Obtener total de registros para paginación
+      const total = await queryBuilder.getCount();
+
+      // Aplicar paginación
+      const reports = await queryBuilder
+        .skip(skip)
+        .take(limit)
+        .getMany();
+
+      // Calcular información de paginación
+      const totalPages = Math.ceil(total / limit);
+      const hasNext = page < totalPages;
+      const hasPrev = page > 1;
+
+      // Mapear reportes para respuesta (sin exponer datos sensibles)
+      const mappedReports = reports.map(report => ({
+        id: report.id,
+        caseNumber: report.caseNumber,
+        phoneNumber: report.phoneNumber,
+        incidentDate: report.incidentDate,
+        description: report.description,
+        hasEvidence: report.hasEvidence,
+        isAnonymous: report.isAnonymous,
+        status: report.status,
+        createdAt: report.createdAt,
+      }));
+
+      // Log de auditoría
+      this.logger.log(`Consulta de reportes realizada`, {
+        page,
+        limit,
+        total,
+        filters: { status, startDate, endDate },
+        timestamp: new Date().toISOString(),
+      });
+
+      return {
+        reports: mappedReports,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNext,
+          hasPrev,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error al obtener reportes: ${error.message}`, error.stack);
+      throw new BadRequestException('Error al obtener los reportes');
+    }
   }
 } 

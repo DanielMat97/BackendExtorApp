@@ -9,17 +9,63 @@ import {
   ValidationPipe,
   Get,
   Param,
+  Query,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ReportService } from '../services/report.service';
 import { CreateReportDto } from '../dto/create-report.dto';
-import { CreateReportResponseDto, ReportResponseDto } from '../dto/report-response.dto';
+import { CreateReportResponseDto, ReportResponseDto, GetAllReportsResponseDto } from '../dto/report-response.dto';
 
 @Controller('reports')
 @UseGuards(ThrottlerGuard)
 export class ReportsController {
   constructor(private readonly reportService: ReportService) {}
+
+  @Get()
+  @Throttle({ default: { limit: 20, ttl: 60000 } }) // 20 consultas por minuto
+  async getAllReports(
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+    @Query('status') status?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<GetAllReportsResponseDto> {
+    try {
+      const pageNumber = Math.max(1, parseInt(page));
+      const limitNumber = Math.min(50, Math.max(1, parseInt(limit))); // Máximo 50 registros por página
+      
+      const result = await this.reportService.getAllReports({
+        page: pageNumber,
+        limit: limitNumber,
+        status,
+        startDate,
+        endDate,
+      });
+      
+      return {
+        success: true,
+        message: 'Reportes obtenidos exitosamente',
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al obtener los reportes',
+        data: {
+          reports: [],
+          pagination: {
+            page: 1,
+            limit: 10,
+            total: 0,
+            totalPages: 0,
+            hasNext: false,
+            hasPrev: false,
+          },
+        },
+      };
+    }
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)

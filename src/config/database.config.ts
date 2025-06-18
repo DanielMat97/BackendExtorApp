@@ -12,7 +12,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'extorsion_reports',
   entities: [Report],
-  synchronize: process.env.NODE_ENV !== 'production', // Solo en desarrollo
+  synchronize: true, // Solo en desarrollo
   logging: process.env.NODE_ENV === 'development',
   extra: {
     charset: 'utf8mb4_unicode_ci',
